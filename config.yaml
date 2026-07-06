@@ -1,0 +1,50 @@
+project:
+  name: bikenow-mlops
+  target: cnt
+  random_state: 42
+
+data:
+  raw_path: data/raw/hour.csv
+  train_path: data/processed/train.csv
+  test_path: data/processed/test.csv
+  input_path: data/input/new_hours.csv
+  output_path: data/output/predictions.csv
+  test_ratio: 0.20
+
+features:
+  target: cnt
+  drop_columns:
+    - casual
+    - registered
+    - instant
+    - dteday
+  numeric_features:
+    - temp
+    - atemp
+    - hum
+    - windspeed
+    - hr
+    - weekday
+    - mnth
+  categorical_features:
+    - season
+    - yr
+    - holiday
+    - workingday
+    - weathersit
+
+model:
+  type: random_forest
+  n_estimators: 100
+  max_depth: 12
+  min_samples_leaf: 2
+
+metrics:
+  promotion_mae_threshold: 90.0
+
+paths:
+  model_path: models/bikenow_pipeline.joblib
+  metrics_path: reports/metrics.json
+  registry_candidate: registry/candidate/model.joblib
+  registry_production: registry/production/model.joblib
+  prediction_log: logs/predictions_log.csv

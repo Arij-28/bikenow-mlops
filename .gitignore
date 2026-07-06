@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environnement
+.venv/
+venv/
+.env
+
+# Données et artefacts volumineux
+*.zip
+*.parquet
+*.pkl
+*.joblib
+mlruns/
+
+# Artefacts générés
+models/*
+!models/.gitkeep
+reports/*
+!reports/.gitkeep
+!reports/figures/
+reports/figures/*
+!reports/figures/.gitkeep
+runs/*
+!runs/.gitkeep
+logs/*
+!logs/.gitkeep
+registry/candidate/*
+!registry/candidate/.gitkeep
+registry/production/*
+!registry/production/.gitkeep
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/input/*
+!data/input/.gitkeep
+data/output/*
+!data/output/.gitkeep
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/*.log

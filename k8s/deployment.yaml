@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bikenow-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bikenow-api
+  template:
+    metadata:
+      labels:
+        app: bikenow-api
+    spec:
+      containers:
+        - name: bikenow-api
+          image: bikenow-api:tp9
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
