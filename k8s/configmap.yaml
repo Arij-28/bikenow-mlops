@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bikenow-api-config
+data:
+  APP_ENV: production
+  LOG_LEVEL: info
+  MODEL_PATH: registry/production/model.joblib

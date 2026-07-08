@@ -1,15 +1,20 @@
+import csv
+import os
+import time
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
 import joblib
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = PROJECT_ROOT / "registry" / "production" / "model.joblib"
+LOG_PATH = PROJECT_ROOT / "reports" / "api_predictions_log.csv"
 
 
 DEFAULT_FEATURE_COLUMNS = [
@@ -78,10 +83,80 @@ def get_expected_columns(model) -> list:
     return DEFAULT_FEATURE_COLUMNS
 
 
+def check_api_key(api_key: Optional[str]) -> None:
+    expected_key = os.getenv("BIKENOW_API_KEY")
+
+    if not expected_key:
+        return
+
+    if api_key != expected_key:
+        raise HTTPException(
+            status_code=403,
+            detail="Clé API invalide ou manquante.",
+        )
+
+
+def append_prediction_log(
+    row: dict,
+    prediction: float,
+    status: str,
+    response_time_ms: float,
+) -> None:
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    file_exists = LOG_PATH.exists()
+
+    fieldnames = [
+        "timestamp",
+        "season",
+        "yr",
+        "mnth",
+        "hr",
+        "holiday",
+        "weekday",
+        "workingday",
+        "weathersit",
+        "temp",
+        "atemp",
+        "hum",
+        "windspeed",
+        "prediction",
+        "status",
+        "response_time_ms",
+    ]
+
+    log_row = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "season": row.get("season"),
+        "yr": row.get("yr"),
+        "mnth": row.get("mnth"),
+        "hr": row.get("hr"),
+        "holiday": row.get("holiday"),
+        "weekday": row.get("weekday"),
+        "workingday": row.get("workingday"),
+        "weathersit": row.get("weathersit"),
+        "temp": row.get("temp"),
+        "atemp": row.get("atemp"),
+        "hum": row.get("hum"),
+        "windspeed": row.get("windspeed"),
+        "prediction": prediction,
+        "status": status,
+        "response_time_ms": round(response_time_ms, 2),
+    }
+
+    with open(LOG_PATH, "a", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+
+        if not file_exists:
+            writer.writeheader()
+
+        writer.writerow(log_row)
+
+
 app = FastAPI(
     title="BikeNow Demand Forecasting API",
-    description="API de prédiction de la demande horaire de vélos.",
-    version="1.0.0",
+    description="API de prédiction de la demande horaire de vélos avec monitoring.",
+    version="2.0.0",
 )
 
 
@@ -91,6 +166,7 @@ def root():
         "message": "BikeNow API is running",
         "model": "registry/production/model.joblib",
         "docs": "/docs",
+        "monitoring": "/monitoring-summary",
     }
 
 
@@ -102,6 +178,8 @@ def health():
         "status": "ok" if model_exists else "model_missing",
         "model_path": "registry/production/model.joblib",
         "model_exists": model_exists,
+        "monitoring_log": "reports/api_predictions_log.csv",
+        "api_key_enabled": bool(os.getenv("BIKENOW_API_KEY")),
     }
 
 
@@ -122,8 +200,46 @@ def model_info():
         raise HTTPException(status_code=500, detail=str(error))
 
 
+@app.get("/monitoring-summary")
+def monitoring_summary():
+    if not LOG_PATH.exists():
+        return {
+            "status": "no_data",
+            "message": "Aucun log de prédiction disponible.",
+            "log_path": "reports/api_predictions_log.csv",
+        }
+
+    df = pd.read_csv(LOG_PATH)
+
+    if df.empty:
+        return {
+            "status": "no_data",
+            "message": "Le fichier de log est vide.",
+            "log_path": "reports/api_predictions_log.csv",
+        }
+
+    return {
+        "status": "ok",
+        "total_predictions": int(len(df)),
+        "mean_prediction": float(df["prediction"].mean()),
+        "min_prediction": float(df["prediction"].min()),
+        "max_prediction": float(df["prediction"].max()),
+        "mean_response_time_ms": float(df["response_time_ms"].mean()),
+        "most_common_hour": int(df["hr"].mode()[0]),
+        "last_prediction_at": str(df["timestamp"].iloc[-1]),
+        "log_path": "reports/api_predictions_log.csv",
+    }
+
+
 @app.post("/predict", response_model=PredictionOutput)
-def predict(input_data: BikeDemandInput):
+def predict(
+    input_data: BikeDemandInput,
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+):
+    start_time = time.time()
+
+    check_api_key(x_api_key)
+
     try:
         model = load_model()
 
@@ -136,13 +252,34 @@ def predict(input_data: BikeDemandInput):
 
         input_df = pd.DataFrame([input_row], columns=expected_columns)
 
-        prediction = model.predict(input_df)[0]
+        prediction = float(model.predict(input_df)[0])
+
+        response_time_ms = (time.time() - start_time) * 1000
+
+        append_prediction_log(
+            row=row,
+            prediction=prediction,
+            status="success",
+            response_time_ms=response_time_ms,
+        )
 
         return PredictionOutput(
-            prediction=float(prediction),
+            prediction=prediction,
             model_path="registry/production/model.joblib",
             status="success",
         )
 
     except Exception as error:
+        response_time_ms = (time.time() - start_time) * 1000
+
+        try:
+            append_prediction_log(
+                row=to_dict(input_data),
+                prediction=-1,
+                status="error",
+                response_time_ms=response_time_ms,
+            )
+        except Exception:
+            pass
+
         raise HTTPException(status_code=500, detail=str(error))

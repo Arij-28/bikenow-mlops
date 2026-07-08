@@ -3,10 +3,15 @@ kind: Deployment
 metadata:
   name: bikenow-api
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: bikenow-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
   template:
     metadata:
       labels:
@@ -14,7 +19,35 @@ spec:
     spec:
       containers:
         - name: bikenow-api
-          image: bikenow-api:tp9
+          image: bikenow-api:tp11
           imagePullPolicy: Never
           ports:
             - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: bikenow-api-config
+            - secretRef:
+                name: bikenow-api-secret
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
